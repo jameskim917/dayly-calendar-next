@@ -1,3 +1,4 @@
+import axios from "axios";
 import {
   createContext,
   useContext,
@@ -7,9 +8,12 @@ import {
   useCallback,
 } from "react";
 
+export const axiosGoogle = axios.create();
+
 interface AuthCtx {
   session: any;
   user: any;
+  isGoogleSignedIn: boolean;
   signInWithGoogle: () => any;
   signOut: () => any;
 }
@@ -17,6 +21,7 @@ interface AuthCtx {
 export const AuthContext = createContext<AuthCtx>({
   session: null,
   user: null,
+  isGoogleSignedIn: false,
   signInWithGoogle: () => null,
   signOut: () => null,
 });
@@ -35,12 +40,18 @@ export const AuthProvider = ({
   const signInWithGoogle = useCallback(async () => {
     const { data, error } = await supabase.auth.signInWithOAuth({
       provider: "google",
+      options: {
+        scopes: "openid profile email https://www.googleapis.com/auth/calendar",
+      },
     });
     if (error) {
       console.log(error);
     } else {
       setSession(data);
       setUser(data.session?.user);
+      axiosGoogle.defaults.headers.common = {
+        Authorization: `Bearer ${data.session?.provider_token}`,
+      };
     }
   }, [supabase.auth]);
 
@@ -58,6 +69,8 @@ export const AuthProvider = ({
     return {
       session,
       user,
+      isGoogleSignedIn:
+        session?.session?.user?.app_metadata?.provider === "google",
       signInWithGoogle,
       signOut,
     };
@@ -70,6 +83,9 @@ export const AuthProvider = ({
         setSession(supabaseSession);
         setUser(supabaseSession.session?.user);
         console.log(supabaseSession);
+        axiosGoogle.defaults.headers.common = {
+          Authorization: `Bearer ${supabaseSession.session?.provider_token}`,
+        };
       }
     }
 
@@ -81,13 +97,4 @@ export const AuthProvider = ({
       {children}
     </AuthContext.Provider>
   );
-};
-
-export const useAuth = () => {
-  const context = useContext(AuthContext);
-  if (context === undefined) {
-    throw new Error("useAuth must be used within an AuthProvider");
-  }
-
-  return context;
 };

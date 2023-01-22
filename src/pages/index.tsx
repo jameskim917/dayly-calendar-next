@@ -7,6 +7,7 @@ import React, {
   useState,
   useEffect,
 } from "react";
+import { useAuth } from "@/lib/useAuth";
 import dayjs from "dayjs";
 import styled, { css, createGlobalStyle } from "styled-components";
 import {
@@ -22,9 +23,19 @@ import {
   TextInput,
 } from "@mantine/core";
 import { DatePicker, TimeInput } from "@mantine/dates";
-import { IconMapSearch, IconPaperclip, IconPhoto } from "@tabler/icons";
-import { useSupabaseClient, useUser } from "@supabase/auth-helpers-react";
-import { useAuth } from "@/lib/auth";
+import {
+  IconBrandGoogle,
+  IconMapSearch,
+  IconPaperclip,
+  IconPhoto,
+} from "@tabler/icons";
+import { useGetGoogleCalendarList } from "@/models/GoogleCalendar";
+
+enum SelectedViews {
+  Day = "Day",
+  Week = "Week",
+  Month = "Month",
+}
 
 enum SelectedCategories {
   Event = "Event",
@@ -38,7 +49,7 @@ const GlobalStyle = createGlobalStyle`
     margin: 0;
   }
   div {
-    font-family: 'Inter', sans-serif;
+    font-family: -apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,sans-serif,Apple Color Emoji,Segoe UI Emoji;
   }
 `;
 const Wrapper = styled.div`
@@ -48,45 +59,42 @@ const Wrapper = styled.div`
   flex-direction: row;
 `;
 const SidebarContainer = styled.div`
+  min-width: 220px;
+  max-width: 220px;
   display: flex;
-  flex: 1;
   flex-direction: column;
   padding: 10px;
 `;
 const SidebarHeader = styled.div`
+  height: 28px;
   display: flex;
-  padding: 10px 0;
+  flex-direction: column;
+  justify-content: center;
+  margin-bottom: 10px;
 `;
-const SidebarHeaderText = styled.h3`
-  font-size: 16px;
-  font-weight: 500;
+const SidebarLogoContainer = styled.div`
+  display: flex;
+  align-items: center;
 `;
 const SidebarCalendars = styled.div`
   display: flex;
   flex-direction: column;
 `;
-const SidebarCalendar = styled.div`
+const SidebarCalendarsLabelContainer = styled.div`
   display: flex;
-  flex-direction: column;
-`;
-const SidebarCalendarGroupTitle = styled.div`
-  display: flex;
+  gap: 10px;
   margin-bottom: 5px;
 `;
-const SidebarCalendarGroupTitleText = styled.h6`
-  font-size: 13px;
-  font-weight: 400;
-  color: #999999;
+const SidebarCalendarsLabel = styled.h3`
+  font-size: 12px;
+  font-weight: 500;
 `;
-const SidebarCalendarGroup = styled.div`
-  display: flex;
-  flex-direction: column;
-`;
-const SidebarCalendarItem = styled.div`
+const SidebarCalendar = styled.div`
   display: flex;
   flex-direction: row;
   align-items: center;
   padding: 5px 0;
+  margin-left: 15px;
 `;
 const SidebarCalendarColor = styled.div`
   display: flex;
@@ -94,14 +102,23 @@ const SidebarCalendarColor = styled.div`
   width: 15px;
   height: 15px;
   margin-right: 10px;
+  background-color: ${(props: { bgColor: string }) => {
+    return props.bgColor;
+  }};
 `;
 const SidebarCalendarText = styled.p`
-  font-size: 13px;
+  font-size: 12px;
+`;
+const SidebarBottom = styled.div`
+  display: flex;
+  flex-direction: column;
+  margin-top: auto;
 `;
 const CalendarContainer = styled.div`
   display: flex;
-  flex: 5;
+  flex: 1;
   flex-direction: column;
+  margin: 0 10px 10px 10px;
 `;
 const CalendarHeader = styled.div`
   display: flex;
@@ -110,48 +127,73 @@ const CalendarHeader = styled.div`
 `;
 const CalendarHeaderLeft = styled.div`
   display: flex;
+  align-items: center;
   flex: 1;
 `;
 const CalendarHeaderMonthYear = styled.div`
   display: flex;
-  font-size: 32px;
-  font-weight: bold;
+  font-size: 16px;
+  font-weight: 500;
 `;
 const CalendarHeaderRight = styled.div`
   display: flex;
+  justify-content: flex-end;
   flex: 1;
+`;
+const CalendarBody = styled.div`
+  flex: 1;
+  border-radius: 10px;
+  overflow: hidden;
+  background-color: #f4f7f9;
+`;
+const CalendarBodyBg = styled.div`
+  height: 100%;
+  flex: 1;
+  display: flex;
+  gap: 1px;
+  flex-direction: column;
+  background-color: #e9ecee;
 `;
 const DaysOfWeek = styled.div`
   display: flex;
   flex-direction: row;
+  gap: 1px;
+  background-color: #f4f7f9;
 `;
 const DayOfWeek = styled.div`
   display: flex;
+  justify-content: center;
   width: ${`${(1 / 7) * 100}` + `%`};
-  padding: 5px 0;
+  padding: 10px 0;
+  text-transform: uppercase;
 `;
 const DayOfWeekText = styled.h6`
-  font-size: 13px;
-  font-weight: 400;
+  font-size: 12px;
+  font-weight: 500;
   color: #999999;
 `;
 const MonthDays = styled.div`
   display: flex;
+  gap: 1px;
   flex: 1;
   flex-direction: row;
   flex-wrap: wrap;
-  width: 100%;
+  width: calc(100% + 1px);
   height: 100%;
 `;
 const Day = styled.div`
   display: flex;
-  width: ${`${(1 / 7) * 100}` + `%`};
-  height: ${`${(1 / 6) * 100}` + `%`};
-  background-color: ${(props: { isCurrentMonth: boolean }) =>
-    props.isCurrentMonth ? "white" : "lightgrey"};
+  width: calc(${`${(1 / 7) * 100}%`} - 1px);
+  height: calc(${`${(1 / 6) * 100}%`} - 1px);
+  background: ${(props: { isCurrentMonth: boolean }) =>
+    props.isCurrentMonth
+      ? "#F4F7F9"
+      : "repeating-linear-gradient(-35deg, #F4F7F9, #F4F7F9 10px, #E5E5E5 10px, #E5E5E5 11px)"};
   :hover {
     background-color: rgb(231, 245, 255);
   }
+  /* margin-bottom: 1px; */
+  /* margin-right: 1px; */
 `;
 const DayTextContainer = styled.div`
   display: flex;
@@ -162,9 +204,9 @@ const DayTextContainer = styled.div`
   padding-right: 5px;
 `;
 const DayText = styled.p`
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 400;
-  padding: 2px 2px 0 0;
+  color: #999999;
 `;
 const ModalBackdrop = styled.div`
   display: flex;
@@ -180,13 +222,13 @@ const ModalBackdrop = styled.div`
 `;
 const ModalContainer = styled.div`
   min-width: 400px;
-  min-height: 550px;
+  /* min-height: 550px; */
   display: flex;
   flex-direction: column;
-  background-color: white;
   border-radius: 10px;
   border-width: 2px;
   border-color: #f2f2f2;
+  /* background-color: rgba(255, 255, 255, 0.7); */
 `;
 const ModalBody = styled.div`
   display: flex;
@@ -200,7 +242,11 @@ const ModalBodyRow = styled.div`
 `;
 
 export default function Home() {
-  const { session, user, signInWithGoogle, signOut } = useAuth();
+  const { session, user, isGoogleSignedIn, signInWithGoogle, signOut } =
+    useAuth();
+  const [isGoogleCalendarFetched, setIsGoogleCalendarFetched] = useState(false);
+
+  const { data: googleCalendars } = useGetGoogleCalendarList();
 
   const WEEKDAYS = useMemo(
     () => ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"],
@@ -353,6 +399,9 @@ export default function Home() {
 
   const [modalVisible, setModalVisible] = useState<boolean>(false);
 
+  const [selectedView, setSelectedView] = useState<SelectedViews>(
+    SelectedViews.Month
+  );
   const [selectedCategory, setSelectedCategory] = useState<SelectedCategories>(
     SelectedCategories.Event
   );
@@ -384,37 +433,76 @@ export default function Home() {
       <Wrapper>
         <SidebarContainer>
           <SidebarHeader>
-            <SidebarHeaderText>Calendars</SidebarHeaderText>
+            <SidebarLogoContainer>
+              <h6 style={{ fontSize: 16, fontWeight: 600 }}>Dayly Calendar</h6>
+            </SidebarLogoContainer>
           </SidebarHeader>
           <SidebarCalendars>
-            <SidebarCalendar>
-              <SidebarCalendarGroupTitle>
-                <SidebarCalendarGroupTitleText>
-                  joylee@gmail.com
-                </SidebarCalendarGroupTitleText>
-              </SidebarCalendarGroupTitle>
-              <SidebarCalendarGroup>
-                <SidebarCalendarItem>
-                  <SidebarCalendarColor></SidebarCalendarColor>
-                  <SidebarCalendarText>Primary</SidebarCalendarText>
-                </SidebarCalendarItem>
-                <SidebarCalendarItem>
-                  <SidebarCalendarColor></SidebarCalendarColor>
-                  <SidebarCalendarText>Holidays</SidebarCalendarText>
-                </SidebarCalendarItem>
-                <SidebarCalendarItem>
-                  <SidebarCalendarColor></SidebarCalendarColor>
-                  <SidebarCalendarText>Important</SidebarCalendarText>
-                </SidebarCalendarItem>
-              </SidebarCalendarGroup>
-            </SidebarCalendar>
+            {/* <SidebarCalendarsLabel>Calendars</SidebarCalendarsLabel> */}
+            {isGoogleSignedIn && (
+              <SidebarCalendarsLabelContainer>
+                <IconBrandGoogle size={15} stroke={3} />
+                <SidebarCalendarsLabel>{user?.email}</SidebarCalendarsLabel>
+              </SidebarCalendarsLabelContainer>
+            )}
+            {isGoogleSignedIn &&
+              googleCalendars?.length > 0 &&
+              googleCalendars.map(
+                (calendar: { id: string; name: string; color: string }) => {
+                  return (
+                    <SidebarCalendar key={calendar.id}>
+                      {/* <SidebarCalendarColor
+                        bgColor={calendar.color}
+                      ></SidebarCalendarColor>
+                      <SidebarCalendarText>
+                        {calendar.name === user?.email
+                          ? "Primary"
+                          : calendar.name}
+                      </SidebarCalendarText> */}
+                      <Checkbox
+                        checked={true}
+                        label={
+                          calendar.name === user?.email
+                            ? "Primary"
+                            : calendar.name
+                        }
+                        styles={{
+                          inner: {
+                            width: 15,
+                            height: 15,
+                          },
+                          input: {
+                            width: 15,
+                            height: 15,
+                            backgroundColor: calendar.color,
+                            borderColor: calendar.color,
+                            [":checked"]: {
+                              backgroundColor: calendar.color,
+                              borderColor: calendar.color,
+                            },
+                          },
+                          labelWrapper: {
+                            fontSize: 12,
+                            lineHeight: "15px",
+                          },
+                        }}
+                      />
+                    </SidebarCalendar>
+                  );
+                }
+              )}
           </SidebarCalendars>
-          {user ? (
-            <Button onClick={signOut}>Sign Out</Button>
-          ) : (
-            <Button onClick={signInWithGoogle}>Sign In</Button>
-          )}
-          <p>{user ? user.email : null}</p>
+          <SidebarBottom>
+            {user ? (
+              <Button onClick={signOut} variant="light" color="gray">
+                Sign Out
+              </Button>
+            ) : (
+              <Button onClick={signInWithGoogle} variant="light" color="gray">
+                Sign In
+              </Button>
+            )}
+          </SidebarBottom>
         </SidebarContainer>
 
         <CalendarContainer>
@@ -424,40 +512,62 @@ export default function Home() {
                 {currentMonthText}
               </CalendarHeaderMonthYear>
             </CalendarHeaderLeft>
-            <CalendarHeaderRight></CalendarHeaderRight>
+            <CalendarHeaderRight>
+              <SegmentedControl
+                styles={{ label: { minWidth: 70 } }}
+                size={"xs"}
+                value={selectedView}
+                onChange={setSelectedView}
+                data={[
+                  { label: "Day", value: SelectedViews.Day },
+                  { label: "Week", value: SelectedViews.Week },
+                  { label: "Month", value: SelectedViews.Month },
+                ]}
+              />
+            </CalendarHeaderRight>
           </CalendarHeader>
-          <DaysOfWeek>
-            {WEEKDAYS.map((weekday, i) => {
-              return (
-                <DayOfWeek key={i}>
-                  <DayOfWeekText>{weekday}</DayOfWeekText>
-                </DayOfWeek>
-              );
-            })}
-          </DaysOfWeek>
-          <MonthDays>
-            {monthDays?.map((day, i) => {
-              return (
-                <Day
-                  key={i}
-                  isCurrentMonth={day.isCurrentMonth}
-                  onClick={() => setModalVisible(true)}
-                >
-                  <DayTextContainer>
-                    <DayText>{day.dayOfMonth}</DayText>
-                  </DayTextContainer>
-                </Day>
-              );
-            })}
-          </MonthDays>
+          <CalendarBody>
+            <CalendarBodyBg>
+              <DaysOfWeek>
+                {WEEKDAYS.map((weekday, i) => {
+                  return (
+                    <DayOfWeek key={i}>
+                      <DayOfWeekText>{weekday}</DayOfWeekText>
+                    </DayOfWeek>
+                  );
+                })}
+              </DaysOfWeek>
+              <MonthDays>
+                {monthDays?.map((day, i) => {
+                  return (
+                    <Day
+                      key={i}
+                      isCurrentMonth={day.isCurrentMonth}
+                      onClick={() => setModalVisible(true)}
+                    >
+                      <DayTextContainer>
+                        <DayText>{day.dayOfMonth}</DayText>
+                      </DayTextContainer>
+                    </Day>
+                  );
+                })}
+              </MonthDays>
+            </CalendarBodyBg>
+          </CalendarBody>
           <Modal
             opened={modalVisible}
             onClose={() => setModalVisible(false)}
             size="auto"
             centered
-            overlayOpacity={0.2}
-            overlayBlur={0.5}
+            overlayOpacity={0}
             title="Add To Calendar"
+            styles={{
+              modal: {
+                borderRadius: "10px",
+                backgroundColor: "rgba(255, 255, 255, 0.95)",
+                backdropFilter: "blur(4px)",
+              },
+            }}
           >
             <ModalContainer>
               <ModalBody>
