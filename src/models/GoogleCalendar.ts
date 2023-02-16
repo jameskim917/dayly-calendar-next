@@ -1,11 +1,11 @@
 import { queryClient } from "@/lib/queryClient";
-import { useMutation, useQuery } from "react-query";
+import { useMutation, useQueries, useQuery } from "react-query";
 import axios from "axios";
 import { axiosGoogle } from "@/lib/auth";
 import { useAuth } from "@/lib/useAuth";
 
-export function useGetGoogleCalendarList() {
-  const { isGoogleSignedIn } = useAuth();
+export function useGetGoogleCalendarList(enabled: boolean) {
+  // const { isGoogleSignedIn } = useAuth();
   async function getGoogleCalendarList() {
     return await axiosGoogle
       .get(`https://www.googleapis.com/calendar/v3/users/me/calendarList`)
@@ -13,11 +13,12 @@ export function useGetGoogleCalendarList() {
         const calendarList = res.data.items;
         const calendars = calendarList.map((calendar: any) => {
           return {
-            id: calendar.id,
+            id: calendar.id.replace("#", "%23"), // convert '#'
             name: calendar.summary,
             color: calendar.backgroundColor,
           };
         });
+        console.log("calendarList", calendarList);
         console.log(calendars);
         return calendars;
       });
@@ -25,12 +26,11 @@ export function useGetGoogleCalendarList() {
 
   return useQuery("googleCalendarList", getGoogleCalendarList, {
     staleTime: Infinity,
-    enabled: isGoogleSignedIn,
+    enabled: enabled,
   });
 }
 
-export function useGetGoogleCalendar() {
-  const { isGoogleSignedIn } = useAuth();
+export function useGetGoogleCalendar(enabled: boolean, calendarId: string) {
   async function getGoogleCalendar() {
     return await axios
       .get(`https://www.googleapis.com/calendar/v3/calendars/${calendarId}`)
@@ -39,33 +39,29 @@ export function useGetGoogleCalendar() {
 
   return useQuery("googleCalendar", getGoogleCalendar, {
     staleTime: Infinity,
-    enabled: isGoogleSignedIn,
+    enabled: enabled,
   });
 }
 
-export function useGetGoogleCalendarEvents(timeMin: Date, timeMax: Date) {
-  const { isGoogleSignedIn } = useAuth();
-  async function getGoogleCalendarEvents() {
-    return await axios
-      .get(
-        `https://www.googleapis.com/calendar/v3/calendars/${calendarId}/events`,
-        {
-          params: {
-            timeMin: timeMin,
-            timeMax: timeMax,
-          },
-        }
-      )
-      .then((res) => console.log(res.data));
-  }
-
-  return useQuery("googleCalendarEvents", getGoogleCalendarEvents, {
-    enabled: isGoogleSignedIn,
-  });
+export async function getGoogleCalendarEvents(calendarId: string) {
+  return await axiosGoogle
+    .get(
+      `https://www.googleapis.com/calendar/v3/calendars/${calendarId}/events`,
+      {
+        // params: {
+        //   timeMin: timeMin,
+        //   timeMax: timeMax,
+        // },
+      }
+    )
+    .then((res) => console.log(res.data));
 }
 
-export function usePostGoogleCalendarEvent(eventData: any, calendarId: string) {
-  const { isGoogleSignedIn } = useAuth();
+export function usePostGoogleCalendarEvent(
+  enabled: boolean,
+  eventData: any,
+  calendarId: string
+) {
   async function postGoogleCalendarEvent() {
     return await axios
       .post(

@@ -6,6 +6,8 @@ import React, {
   useMemo,
   useState,
   useEffect,
+  RefObject,
+  createRef,
 } from "react";
 import { useAuth } from "@/lib/useAuth";
 import dayjs from "dayjs";
@@ -19,6 +21,7 @@ import {
   List,
   Modal,
   SegmentedControl,
+  Select,
   Textarea,
   TextInput,
 } from "@mantine/core";
@@ -29,7 +32,12 @@ import {
   IconPaperclip,
   IconPhoto,
 } from "@tabler/icons";
-import { useGetGoogleCalendarList } from "@/models/GoogleCalendar";
+import {
+  getGoogleCalendarEvents,
+  useGetGoogleCalendar,
+  useGetGoogleCalendarList,
+} from "@/models/GoogleCalendar";
+import { useQueries } from "react-query";
 
 enum SelectedViews {
   Day = "Day",
@@ -221,14 +229,20 @@ const ModalBackdrop = styled.div`
   align-items: center;
 `;
 const ModalContainer = styled.div`
-  min-width: 400px;
+  position: absolute;
+  top: ${(props: { dayRef: RefObject<HTMLDivElement> | null }) =>
+    props.dayRef?.current?.offsetTop}px;
+  left: ${(props: { dayRef: RefObject<HTMLDivElement> | null }) =>
+    props.dayRef?.current?.offsetLeft! + props.dayRef?.current?.offsetWidth!}px;
+  min-width: 300px;
   /* min-height: 550px; */
   display: flex;
   flex-direction: column;
+  padding: 10px;
   border-radius: 10px;
   border-width: 2px;
   border-color: #f2f2f2;
-  /* background-color: rgba(255, 255, 255, 0.7); */
+  background-color: rgba(255, 255, 255, 0.9);
 `;
 const ModalBody = styled.div`
   display: flex;
@@ -240,13 +254,216 @@ const ModalBodyRow = styled.div`
   width: 100%;
   flex-direction: row;
 `;
+const ModalFooter = styled.div`
+  display: flex;
+  justify-content: space-between;
+  border-top: 1px solid #f2f2f2;
+  padding-top: 10px;
+`;
+
+const AddEventModal: React.FC<{
+  selectedCategory: SelectedCategories;
+  setSelectedCategory: (category: SelectedCategories) => void;
+  startDate: Date;
+  setStartDate: (date: Date) => void;
+  startTime: Date;
+  setStartTime: (date: Date) => void;
+  allDay: boolean;
+  setAllDay: (allDay: boolean) => void;
+  location: string;
+  setLocation: (location: string) => void;
+  description: string;
+  setDescription: (description: string) => void;
+  resetFileRef: RefObject<() => void>;
+  setFiles: (files: File[]) => void;
+  files: File[];
+  clearFile: () => void;
+  selectedCalendar: string;
+  setSelectedCalendar: (calendar: string) => void;
+  googleCalendars: any;
+  user: any;
+  dayRef: RefObject<HTMLDivElement> | null;
+}> = ({
+  selectedCategory,
+  setSelectedCategory,
+  startDate,
+  setStartDate,
+  startTime,
+  setStartTime,
+  allDay,
+  setAllDay,
+  location,
+  setLocation,
+  description,
+  setDescription,
+  resetFileRef,
+  setFiles,
+  files,
+  clearFile,
+  selectedCalendar,
+  setSelectedCalendar,
+  googleCalendars,
+  user,
+  dayRef,
+}) => {
+  return (
+    <ModalContainer dayRef={dayRef}>
+      <ModalBody>
+        <SegmentedControl
+          value={selectedCategory}
+          onChange={setSelectedCategory}
+          data={[
+            { label: "Event", value: SelectedCategories.Event },
+            { label: "Task", value: SelectedCategories.Task },
+            { label: "Journal", value: SelectedCategories.Journal },
+          ]}
+          color={"blue"}
+        />
+        <TextInput
+          placeholder={`${selectedCategory} Title`}
+          label="Title"
+          withAsterisk
+        />
+        <DatePicker
+          placeholder="Pick date"
+          label="Date"
+          withAsterisk
+          defaultValue={new Date()}
+          value={startDate}
+          onChange={setStartDate}
+        />
+        {selectedCategory === SelectedCategories.Event ||
+        (selectedCategory === SelectedCategories.Task && !allDay) ? (
+          <TimeInput
+            label={
+              // eslint-disable-next-line no-nested-ternary
+              selectedCategory === SelectedCategories.Event
+                ? "Start Time"
+                : selectedCategory === SelectedCategories.Task
+                ? "Due Time"
+                : ""
+            }
+            format="12"
+            defaultValue={new Date()}
+            value={startTime}
+            onChange={setStartTime}
+          />
+        ) : null}
+        {selectedCategory === SelectedCategories.Event ? (
+          <Checkbox
+            label="All Day"
+            size="xs"
+            checked={allDay}
+            onChange={(event) => setAllDay(event.currentTarget.checked)}
+          />
+        ) : null}
+        {selectedCategory === SelectedCategories.Event ? (
+          <TextInput
+            placeholder="Event Location"
+            label="Location"
+            value={location}
+            onChange={(event) => setLocation(event.currentTarget.value)}
+            rightSection={
+              <ActionIcon>
+                <IconMapSearch />
+              </ActionIcon>
+            }
+          />
+        ) : null}
+        {selectedCategory === SelectedCategories.Event ||
+        selectedCategory === SelectedCategories.Task ? (
+          <Textarea
+            placeholder="Description"
+            label="Description"
+            variant="filled"
+            value={description}
+            onChange={(event) => setDescription(event.currentTarget.value)}
+          />
+        ) : null}
+        {selectedCategory === SelectedCategories.Journal ? <Textarea /> : null}
+        {selectedCategory === SelectedCategories.Event ||
+        selectedCategory === SelectedCategories.Journal ? (
+          <Group position="left">
+            <FileButton
+              resetRef={resetFileRef}
+              onChange={setFiles}
+              accept=".pdf,.doc,.docx,image/png,image/jpeg,image/jpg"
+              multiple
+            >
+              {(props) => (
+                <ActionIcon {...props}>
+                  {selectedCategory === SelectedCategories.Event ? (
+                    <IconPaperclip />
+                  ) : (
+                    <IconPhoto />
+                  )}
+                </ActionIcon>
+              )}
+            </FileButton>
+            <Button
+              disabled={files.length === 0}
+              color="red"
+              size="xs"
+              onClick={clearFile}
+            >
+              Reset
+            </Button>
+          </Group>
+        ) : null}
+        {files && (
+          <List size="sm" mt={5} withPadding>
+            {files.map((file, index) => (
+              <List.Item key={index}>{file.name}</List.Item>
+            ))}
+          </List>
+        )}
+      </ModalBody>
+      <ModalFooter>
+        <Select
+          value={selectedCalendar}
+          onChange={setSelectedCalendar}
+          data={googleCalendars?.map(
+            (calendar: { id: string; name: string }) => {
+              return {
+                value: calendar.id,
+                label:
+                  calendar.name === user?.email ? "Primary" : calendar.name,
+              };
+            }
+          )}
+          dropdownPosition={"top"}
+          size={"xs"}
+        />
+        <Button size="xs">Submit</Button>
+      </ModalFooter>
+    </ModalContainer>
+  );
+};
 
 export default function Home() {
   const { session, user, isGoogleSignedIn, signInWithGoogle, signOut } =
     useAuth();
   const [isGoogleCalendarFetched, setIsGoogleCalendarFetched] = useState(false);
 
-  const { data: googleCalendars } = useGetGoogleCalendarList();
+  const { data: googleCalendars, isSuccess } =
+    useGetGoogleCalendarList(isGoogleSignedIn);
+
+  const gCals = googleCalendars;
+
+  const googleCalendarEvents = useQueries(
+    gCals?.map((calendar: any) => {
+      return {
+        queryKey: ["googleCalendarEventsById", calendar.id],
+        queryFn: () => getGoogleCalendarEvents(calendar.id),
+        staleTime: Infinity,
+        enabled: calendar.id !== undefined,
+      };
+    }) ?? []
+  );
+
+  useEffect(() => {
+    console.log(googleCalendarEvents);
+  }, [googleCalendarEvents]);
 
   const WEEKDAYS = useMemo(
     () => ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"],
@@ -255,17 +472,14 @@ export default function Home() {
   // const TODAY = useMemo(() => dayjs().format('YYYY-MM-DD'), []);
 
   const [currentMonthYear, setCurrentMonthYear] = useState(() => {
-    const currentYear = dayjs().format("YYYY");
-    const currentMonth = dayjs().format("M");
+    const currentYear = parseInt(dayjs().format("YYYY"));
+    const currentMonth = parseInt(dayjs().format("M"));
     return { year: currentYear, month: currentMonth };
   });
 
   const currentMonthText = useMemo(() => {
     return dayjs(
-      new Date(
-        parseInt(currentMonthYear.year),
-        parseInt(currentMonthYear.month) - 1
-      )
+      new Date(currentMonthYear.year, currentMonthYear.month - 1)
     ).format("MMMM YYYY");
   }, [currentMonthYear]);
 
@@ -345,17 +559,17 @@ export default function Home() {
 
   const monthDays = useMemo(() => {
     const currentMonthDays = createDaysForCurrentMonth(
-      parseInt(currentMonthYear.year),
-      parseInt(currentMonthYear.month)
+      currentMonthYear.year,
+      currentMonthYear.month
     );
     const previousMonthDays = createDaysForPreviousMonth(
-      parseInt(currentMonthYear.year),
-      parseInt(currentMonthYear.month),
+      currentMonthYear.year,
+      currentMonthYear.month,
       currentMonthDays[0].dayOfWeek
     );
     const nextMonthDays = createDaysForNextMonth(
-      parseInt(currentMonthYear.year),
-      parseInt(currentMonthYear.month),
+      currentMonthYear.year,
+      currentMonthYear.month,
       currentMonthDays[currentMonthDays.length - 1].dayOfWeek
     );
     console.log("monthDays: ", [
@@ -369,6 +583,16 @@ export default function Home() {
     currentMonthYear.month,
     currentMonthYear.year,
   ]);
+
+  const dayRefs = useMemo(
+    () =>
+      Array.from({ length: monthDays.length }).map(() =>
+        createRef<HTMLDivElement>()
+      ),
+    [monthDays]
+  );
+
+  const [selectedDayIndex, setSelectedDayIndex] = useState<number | null>(null);
 
   // const getWeekday = useCallback(date => {
   //   return dayjs(date).weekday();
@@ -404,6 +628,10 @@ export default function Home() {
   );
   const [selectedCategory, setSelectedCategory] = useState<SelectedCategories>(
     SelectedCategories.Event
+  );
+
+  const [selectedCalendar, setSelectedCalendar] = useState<string>(
+    googleCalendars?.[0]?.id || ""
   );
 
   const [title, setTitle] = useState<string>("");
@@ -517,7 +745,7 @@ export default function Home() {
                 styles={{ label: { minWidth: 70 } }}
                 size={"xs"}
                 value={selectedView}
-                onChange={setSelectedView}
+                onChange={(value: SelectedViews) => setSelectedView(value)}
                 data={[
                   { label: "Day", value: SelectedViews.Day },
                   { label: "Week", value: SelectedViews.Week },
@@ -541,9 +769,13 @@ export default function Home() {
                 {monthDays?.map((day, i) => {
                   return (
                     <Day
+                      ref={dayRefs[i]}
                       key={i}
                       isCurrentMonth={day.isCurrentMonth}
-                      onClick={() => setModalVisible(true)}
+                      onClick={() => {
+                        setSelectedDayIndex(i);
+                        setModalVisible(true);
+                      }}
                     >
                       <DayTextContainer>
                         <DayText>{day.dayOfMonth}</DayText>
@@ -554,7 +786,35 @@ export default function Home() {
               </MonthDays>
             </CalendarBodyBg>
           </CalendarBody>
-          <Modal
+
+          {modalVisible && (
+            <AddEventModal
+              selectedCategory={selectedCategory}
+              setSelectedCategory={setSelectedCategory}
+              startDate={startDate}
+              setStartDate={setStartDate}
+              startTime={startTime}
+              setStartTime={setStartTime}
+              allDay={allDay}
+              setAllDay={setAllDay}
+              location={location}
+              setLocation={setLocation}
+              description={description}
+              setDescription={setDescription}
+              resetFileRef={resetFileRef}
+              setFiles={setFiles}
+              files={files}
+              clearFile={clearFile}
+              selectedCalendar={selectedCalendar}
+              setSelectedCalendar={setSelectedCalendar}
+              googleCalendars={googleCalendars}
+              user={user}
+              dayRef={
+                selectedDayIndex !== null ? dayRefs[selectedDayIndex] : null
+              }
+            />
+          )}
+          {/* <Modal
             opened={modalVisible}
             onClose={() => setModalVisible(false)}
             size="auto"
@@ -579,6 +839,7 @@ export default function Home() {
                     { label: "Task", value: SelectedCategories.Task },
                     { label: "Journal", value: SelectedCategories.Journal },
                   ]}
+                  color={"blue"}
                 />
                 <TextInput
                   placeholder={`${selectedCategory} Title`}
@@ -681,8 +942,28 @@ export default function Home() {
                   ))}
                 </List>
               </ModalBody>
+              <ModalFooter>
+                <Select
+                  value={selectedCalendar}
+                  onChange={setSelectedCalendar}
+                  data={googleCalendars?.map(
+                    (calendar: { id: string; name: string }) => {
+                      return {
+                        value: calendar.id,
+                        label:
+                          calendar.name === user?.email
+                            ? "Primary"
+                            : calendar.name,
+                      };
+                    }
+                  )}
+                  dropdownPosition={"top"}
+                  size={"xs"}
+                />
+                <Button size="xs">Submit</Button>
+              </ModalFooter>
             </ModalContainer>
-          </Modal>
+          </Modal> */}
         </CalendarContainer>
       </Wrapper>
     </>
